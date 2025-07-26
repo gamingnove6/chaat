@@ -4,6 +4,9 @@ import threading
 clients = []
 
 def handle_client(client_socket, addr):
+    if addr[0] == '127.0.0.1':  # Ignore Render probes
+        client_socket.close()
+        return
     print(f"New client connected: {addr}")
     clients.append(client_socket)
     while True:
