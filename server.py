@@ -1,42 +1,32 @@
-import socket
+from flask import Flask, request, jsonify
+from datetime import datetime
 import threading
 
-clients = []
+app = Flask(__name__)
+messages = []  # In-memory message store
+lock = threading.Lock()
 
-def handle_client(client_socket, addr):
-    if addr[0] == '127.0.0.1':  # Ignore Render probes
-        client_socket.close()
-        return
-    print(f"New client connected: {addr}")
-    clients.append(client_socket)
-    while True:
-        try:
-            message = client_socket.recv(1024).decode('utf-8')
-            if not message:
-                clients.remove(client_socket)
-                client_socket.close()
-                print(f"Client disconnected: {addr}")
-                break
-            # Broadcast message to other clients
-            for sock in clients:
-                if sock != client_socket:
-                    sock.send(message.encode('utf-8'))
-        except:
-            clients.remove(client_socket)
-            client_socket.close()
-            print(f"Client disconnected: {addr}")
-            break
+@app.route('/send', methods=['POST'])
+def send_message():
+    data = request.json
+    if not data or 'user' not in data or 'message' not in data:
+        return jsonify({'error': 'Invalid request'}), 400
+    with lock:
+        messages.append({
+            'user': data['user'],
+            'message': data['message'],
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    return jsonify({'status': 'Message sent'}), 200
 
-def main():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind(('0.0.0.0', 8080))
-    server.listen(3)  # Up to 3 clients
-    print("Server listening on port 8080...")
+@app.route('/messages', methods=['GET'])
+def get_messages():
+    last_index = int(request.args.get('last_index', 0))
+    with lock:
+        return jsonify({
+            'messages': messages[last_index:],
+            'last_index': len(messages)
+        })
 
-    while True:
-        client_socket, addr = server.accept()
-        thread = threading.Thread(target=handle_client, args=(client_socket, addr))
-        thread.start()
-
-if __name__ == "__main__":
-    main()
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8080)
